@@ -20,6 +20,7 @@ knitr::opts_chunk$set(echo = TRUE,
 library(magrittr)
 library(coda)
 library(rstan)
+library(stringr)
 library(tidyverse)
 ```
 
@@ -166,29 +167,62 @@ Fortunately, a variational approximation will fit in a reasonable time on my lap
 # 
 # tmp_sample %>% rstan::extract() %>% .[[7]] %>% as_tibble %>% select(916) %>% ggplot(aes(V916)) + geom_histogram(bins = 40)
 
-e12_full = peak_counts %>% 
-  filter(file == 'E12-10000bps.txt') %>% 
-  spread(subj_type, n_peaks)
+# e12_full = peak_counts %>% 
+#   filter(file == 'E12-10000bps.txt') %>% 
+#   spread(subj_type, n_peaks)
+# 
+# microbenchmark(e12_full_vb <- vb(object = stanDSO,
+#                                         data = list(N = nrow(e12_full), case_counts = e12_full$case, ctrl_counts = e12_full$ctrl)),
+#                            times = 1) #147 seconds
 
-microbenchmark(e12_full_vb <- vb(object = stanDSO,
-                                        data = list(N = nrow(e12_full), case_counts = e12_full$case, ctrl_counts = e12_full$ctrl)),
-                           times = 1) #147 seconds
+# e12_res = e12_full_vb %>% rstan::extract() %>% .[[7]] %>% as_tibble() %>% set_names(e12_full$region) %>% gather(region, case_ctrl_diff) %>% group_by(region) %>% summarise(region_diff_hdi = list(hdi_fun(case_ctrl_diff)))
+# 
+# e12_res %>% 
+#   mutate(hdi_99_func = map_lgl(region_diff_hdi, ~!between(0, .x[1], .x[2]))) %>% 
+#   filter(hdi_99_func) %>% 
+#   left_join(e12_full, by = 'region')
 
 hdi_fun = function(case_ctrl_diff_vec, prob = .99){
   HPDinterval(mcmc(case_ctrl_diff_vec), prob = prob)
 }
 
-e12_res = e12_full_vb %>% rstan::extract() %>% .[[7]] %>% as_tibble() %>% set_names(e12_full$region) %>% gather(region, case_ctrl_diff) %>% group_by(region) %>% summarise(region_diff_hdi = list(hdi_fun(case_ctrl_diff)))
+run_vb = function(file_dat){
+  strt_time = Sys.time()
+  data_list = list(N = nrow(file_dat), case_counts = file_dat$case, ctrl_counts = file_dat$ctrl)
 
-e12_res %>% 
-  mutate(hdi_99_func = map_lgl(region_diff_hdi, ~!between(0, .x[1], .x[2]))) %>% 
-  filter(hdi_99_func) %>% 
-  left_join(e12_full, by = 'region')
+  vb_res = vb(object = stanDSO,
+     data = data_list,
+     output_samples = 2000)
+  save(vb_res,
+       file = paste0('~/ayush/outputs/', str_extract(file_dat$file[1], 'E[0-9]+'), '_hits.RData'))
+  
+  vb_summary = vb_res %>% 
+    rstan::extract() %>% 
+    .[[7]] %>% # case_ctrl_diff element
+    as_tibble() %>%
+    set_names(file_dat$region) %>% 
+    gather(region, case_ctrl_diff) %>%
+    group_by(region) %>% 
+    summarise(region_diff_hdi = list(hdi_fun(case_ctrl_diff)))
+  
+  vb_hits = vb_summary %>% 
+    mutate(hdi_99_functional = map_lgl(region_diff_hdi, ~!between(0, .x[1], .x[2]))) %>% 
+    filter(hdi_99_functional) %>% 
+    left_join(file_dat, by = 'region')
+    
+  return(vb_hits)
+}
 
-e12_res %>% 
-  mutate(hdi_99_func = map_lgl(region_diff_hdi, ~!between(0, .x[1], .x[2]))) %>% 
-  filter(hdi_99_func) %>% 
-  left_join(e12_full, by = 'region')
+peak_counts %>% 
+  spread(subj_type, n_peaks) %>% 
+  group_by(file) %>% 
+  nest %>% 
+  mutate(data = map2(file, data, ~mutate(.y, file = .x))) %>% # I really wish dplyr had a better way of doing this
+  mutate(vb_time = map(data, run_vb)) # runs variational bayes, saves the results, filters down to the hits, and returns those
+  
+
+
+
 ```
 
 
