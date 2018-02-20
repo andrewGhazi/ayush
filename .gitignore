@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/*
+outputs/*
+Rmd/*.html
+Rmd/peak_modelling_cache/*
+Rmd/peak_modelling_files/*
