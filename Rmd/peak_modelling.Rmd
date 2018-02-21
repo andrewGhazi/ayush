@@ -225,5 +225,6 @@ peak_counts %>%
 
 ```
 
+## Show the hits by file
 
-
+<This is where I will do that>
