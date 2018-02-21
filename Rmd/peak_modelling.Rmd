@@ -191,8 +191,8 @@ run_vb = function(file_dat){
   data_list = list(N = nrow(file_dat), case_counts = file_dat$case, ctrl_counts = file_dat$ctrl)
 
   vb_res = vb(object = stanDSO,
-     data = data_list,
-     output_samples = 2000)
+              data = data_list,
+              output_samples = 2000)
   save(vb_res,
        file = paste0('~/ayush/outputs/', str_extract(file_dat$file[1], 'E[0-9]+'), '_hits.RData'))
   
@@ -218,7 +218,7 @@ peak_counts %>%
   group_by(file) %>% 
   nest %>% 
   mutate(data = map2(file, data, ~mutate(.y, file = .x))) %>% # I really wish dplyr had a better way of doing this
-  mutate(vb_time = map(data, run_vb)) # runs variational bayes, saves the results, filters down to the hits, and returns those
+  mutate(vb_hits = map(data, run_vb)) # runs variational bayes, saves the results, filters down to the hits, and returns those
   
 
 
