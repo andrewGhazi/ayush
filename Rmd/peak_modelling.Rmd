@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE,
 ## Libraries, Data import
 
 ```{r}
+library(knitr)
 library(magrittr)
 library(coda)
 library(rstan)
@@ -48,6 +49,8 @@ peak_counts = dat %>%
   group_by(file, region, subj_type) %>% 
   summarise(n_peaks = sum(peak)) %>% 
   ungroup
+
+#save(peak_counts, file = '~/ayush/outputs/peak_counts.RData')
 ```
 
 ```{r}
@@ -65,8 +68,47 @@ peak_counts %>%
 
 Incorporating this correlation into the model is important.
 
+## Traditional tests
+
+We can use Fisher's exact test to see if, for each region, the number of peaks is independent of case-ctrl status:
+
+```{r, eval = FALSE}
+fisher_test_region = function(region_dat){
+  mat = t(as.matrix(cbind(region_dat$n_peaks, region_dat$n_nonpeaks)))
+  
+  fisher.test(mat)
+}
+
+region_fisher_tests = peak_counts %>% 
+  mutate(n_nonpeaks = 12 - n_peaks) %>%
+  group_by(file, region) %>% 
+  nest %>%
+  mutate(fisher_test = mclapply(data, fisher_test_region, mc.cores = 20),
+         fisher_p = map_dbl(fisher_test, ~.x$p.value),
+         fisher_q = p.adjust(fisher_p, method = 'fdr'))
+
+```
+```{r}
+load('~/ayush/outputs/region_fisher_tests.RData')
+region_fisher_tests %>% 
+  filter(fisher_p < .05) %>% 
+  arrange(fisher_p) %>% 
+  head() %>% 
+  select(-fisher_test) %>% 
+  unnest %>% 
+  kable
+```
+
+
+The corrections for multiple testing completely kills any measures of statistical significance, i.e. there are no regions with FDR Q < .05. There are 1334 regions with p < .05, but that's not very surprising when you test 183k regions.
+
+The most statistically significant region `chr2:54680000-54689999` looks pretty promising in [the genome browser](https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&lastVirtModeType=default&lastVirtModeExtraState=&virtModeType=default&virtMode=0&nonVirtPosition=&position=chr2%3A54680000%2D54689999&hgsid=658320433_bE4kAef1PcaGZ4mn4s0qo1qzyiLx) as it covers the start of SPTBN1 and shows a lot of histone marks. [This website](http://www.proteinatlas.org/ENSG00000115306-SPTBN1/pathology) seems to suggest that this gene is prognostic marker in renal cancer.
+
+So there probably IS signal in this data, but this method of analysis makes heavy assumptions about the independence of the regions. These independence assumptions eliminate our ability to make any positive conclusions about signal in this data.
 
 ## Model
+
+Here I define a Bayesian hierarchical model. 
 
 ```{r, eval = FALSE}
 data_frame(x = seq(0, 10, .01), y= dgamma(x, .1, .1)) %>% 
@@ -102,7 +144,7 @@ generated quantities {
   case_ctrl_diff = case_p - ctrl_p;
 }
 '
-# stanDSO = stan_model(model_code = stan_model_code)
+stanDSO = stan_model(model_code = stan_model_code)
 ```
 
 The nice thing about this model is that it looks at the JOINT parameter space, rather than analyzing each region as if they were independent tests (they arent').
@@ -194,7 +236,7 @@ run_vb = function(file_dat){
               data = data_list,
               output_samples = 2000)
   save(vb_res,
-       file = paste0('~/ayush/outputs/', str_extract(file_dat$file[1], 'E[0-9]+'), '_hits.RData'))
+       file = paste0('~/ayush/outputs/rerun_outputs/', str_extract(file_dat$file[1], 'E[0-9]+'), '_hits.RData'))
   
   vb_summary = vb_res %>% 
     rstan::extract() %>% 
@@ -213,18 +255,46 @@ run_vb = function(file_dat){
   return(vb_hits)
 }
 
-peak_counts %>% 
+hits_by_file = peak_counts %>% 
   spread(subj_type, n_peaks) %>% 
   group_by(file) %>% 
   nest %>% 
   mutate(data = map2(file, data, ~mutate(.y, file = .x))) %>% # I really wish dplyr had a better way of doing this
-  mutate(vb_hits = map(data, run_vb)) # runs variational bayes, saves the results, filters down to the hits, and returns those
+  mutate(vb_hits = mclapply(data, run_vb, mc.cores = 4)) # runs variational bayes, saves the results, filters down to the hits, and returns those
   
-
+save(hits_by_file,
+     file = '~/ayush/outputs/hits_by_file.RData')
 
 
 ```
 
 ## Show the hits by file
+
+
+```{r}
+load('~/ayush/outputs/hits_by_file.RData')
+
+format_hdi = function(hdi) {
+  rounded = round(hdi, digits = 3)
+  
+  paste0(rounded[1], ' to ', rounded[2])
+}
+
+hits_by_file %>% 
+  select(-data) %>% 
+  unnest %>% 
+  group_by(file) %>% summarise(n_hits = n()) %>% kable
+
+hits_by_file %>% 
+  select(-data) %>% 
+  unnest %>% 
+  group_by(file) %>% 
+  do(head(.)) %>% 
+  ungroup %>% 
+  mutate(region_diff_hdi = map_chr(region_diff_hdi, format_hdi),
+         file = gsub('-10000bps.txt', '', file)) %>% 
+  select(-file1) %>% 
+  kable(align = 'llcrrr')
+```
 
 <This is where I will do that>
