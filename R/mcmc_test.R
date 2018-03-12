@@ -26,10 +26,10 @@ real<lower=0> case_a;
 real<lower=0> case_b;
 }
 model {
-ctrl_a ~ gamma(.01, .01);
-ctrl_b ~ gamma(.01, .01);
-case_a ~ gamma(.01, .01);
-case_b ~ gamma(.01, .01);
+ctrl_a ~ gamma(20, 20);
+ctrl_b ~ gamma(20, 20);
+case_a ~ gamma(20, 20);
+case_b ~ gamma(20, 20);
 ctrl_p ~ beta(ctrl_a, ctrl_b);
 case_p ~ beta(case_a, case_b);
 case_counts ~ binomial(12, case_p);
@@ -43,8 +43,9 @@ case_ctrl_diff = case_p - ctrl_p;
 stanDSO = stan_model(model_code = stan_model_code)
 
 peak_counts %<>% 
-  spread(subj_type, n_peaks) %>% 
-  filter((case > 0 & ctrl > 0) | ((case + ctrl > 3))) #reduces number of regions by ~51%
+  spread(subj_type, n_peaks) 
+# %>% 
+#   filter((case > 0 & ctrl > 0) | ((case + ctrl > 3))) #reduces number of regions by ~51%
 
 sample_and_save = function(file_dat) {
   start_time = Sys.time()
@@ -52,11 +53,13 @@ sample_and_save = function(file_dat) {
   mcmc_res = sampling(stanDSO, 
                       data = list(N = nrow(file_dat), case_counts = file_dat$case, ctrl_counts = file_dat$ctrl),
                       chains = 3,
+                      iter = 3834,
                       warmup = 500,
                       cores = 3,
-                      open_progress = TRUE)
+                      open_progress = TRUE,
+                      control = list(max_treedepth = 15))
   save(mcmc_res,
-       file = paste0('~/ayush/outputs/mcmc_results/', gsub('[.]txt', '',file_dat$file[1]), '_mcmc.RData')) # probably pretty big
+       file = paste0('~/ayush/outputs/mcmc_results/', gsub('[.]txt', '',file_dat$file[1]), '_full_mcmc.RData')) # probably pretty big
   finish_time = Sys.time()
   
   return(finish_time - start_time)
