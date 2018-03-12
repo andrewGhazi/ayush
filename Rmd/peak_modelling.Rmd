@@ -130,10 +130,10 @@ parameters {
   real<lower=0> case_b;
 }
 model {
-  ctrl_a ~ gamma(.01, .01);
-  ctrl_b ~ gamma(.01, .01);
-  case_a ~ gamma(.01, .01);
-  case_b ~ gamma(.01, .01);
+  ctrl_a ~ gamma(20, 20);
+  ctrl_b ~ gamma(20, 20);
+  case_a ~ gamma(20, 20);
+  case_b ~ gamma(20, 20);
   ctrl_p ~ beta(ctrl_a, ctrl_b);
   case_p ~ beta(case_a, case_b);
   case_counts ~ binomial(12, case_p);
@@ -268,33 +268,73 @@ save(hits_by_file,
 
 ```
 
-## Show the hits by file
+## Prior distribution simulation
 
+This is a small simulation to decide where to set the gamma prior parameters. I simulate 10000 random draws from 4 gamma distributions, then randomly draw case / control peak probabilities from a Beta distribution at each iteration in the simulation. 
 
 ```{r}
-load('~/ayush/outputs/hits_by_file.RData')
+g_params = data_frame(shape = c(.01, .1, 1, 10, 20, 100, 200),
+                      rate = shape)
 
-format_hdi = function(hdi) {
-  rounded = round(hdi, digits = 3)
-  
-  paste0(rounded[1], ' to ', rounded[2])
+get_sim_df = function(shape, rate){
+  data_frame(ctrl_a = rgamma(10000, shape = shape, rate = rate),
+             ctrl_b = rgamma(10000, shape = shape, rate = rate),
+             case_a = rgamma(10000, shape = shape, rate = rate),
+             case_b = rgamma(10000, shape = shape, rate = rate),
+             ctrl_p = map2_dbl(ctrl_a, ctrl_b, ~rbeta(1, shape1 = .x, shape2 = .y)),
+             case_p = map2_dbl(ctrl_a, ctrl_b, ~rbeta(1, shape1 = .x, shape2 = .y)))
 }
 
-hits_by_file %>% 
-  select(-data) %>% 
-  unnest %>% 
-  group_by(file) %>% summarise(n_hits = n()) %>% kable
+prior_sims = g_params %>% 
+  mutate(sim_df = map2(shape, rate, get_sim_df)) %>% 
+  unnest
+# 
+# prior_sims %>% 
+#   ggplot(aes(ctrl_p, case_p)) + geom_bin2d() + facet_wrap(factor('shape'))
 
-hits_by_file %>% 
-  select(-data) %>% 
-  unnest %>% 
-  group_by(file) %>% 
-  do(head(.)) %>% 
-  ungroup %>% 
-  mutate(region_diff_hdi = map_chr(region_diff_hdi, format_hdi),
-         file = gsub('-10000bps.txt', '', file)) %>% 
-  select(-file1) %>% 
-  kable(align = 'llcrrr')
+prior_sims %>% 
+  ggplot(aes(ctrl_p, case_p)) + geom_point(alpha = .1) + facet_wrap(factor('shape'))
+```
+
+I'll just go with setting the shape and rate parameters to 20.
+
+## Show the hits by file
+
+I ran the MCMC
+
+```{r}
+load("~/ayush/outputs/all_region_hdis.RData")
+
+all_region_hdis %>% filter(is_functional) %>% head() %>% kable
+
+all_region_hdis %>% filter(is_functional) %>% group_by(file) %>% summarise(n = n()) %>% kable
+
+
+# load('~/ayush/outputs/hits_by_file.RData')
+# 
+# format_hdi = function(hdi) {
+#   rounded = round(hdi, digits = 3)
+#   
+#   paste0(rounded[1], ' to ', rounded[2])
+# }
+# 
+# hits_by_file %>% 
+#   select(-data) %>% 
+#   unnest %>% 
+#   group_by(file) %>% 
+#   summarise(n_hits = n()) %>% 
+#   kable
+# 
+# hits_by_file %>% 
+#   select(-data) %>% 
+#   unnest %>% 
+#   group_by(file) %>% 
+#   do(head(.)) %>% 
+#   ungroup %>% 
+#   mutate(region_diff_hdi = map_chr(region_diff_hdi, format_hdi),
+#          file = gsub('-10000bps.txt', '', file)) %>% 
+#   select(-file1) %>% 
+#   kable(align = 'llcrrr')
 ```
 
 <This is where I will do that>
