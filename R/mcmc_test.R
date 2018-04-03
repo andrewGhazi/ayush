@@ -53,10 +53,10 @@ sample_and_save = function(file_dat) {
   mcmc_res = sampling(stanDSO, 
                       data = list(N = nrow(file_dat), case_counts = file_dat$case, ctrl_counts = file_dat$ctrl),
                       chains = 3,
-                      iter = 3834,
+                      iter = 2000,
                       warmup = 500,
                       cores = 3,
-                      open_progress = TRUE,
+                      #open_progress = TRUE,
                       control = list(max_treedepth = 15),
                       pars = c('case_a', 'case_b', 'ctrl_a', 'ctrl_b'),
                       include = TRUE)
@@ -69,7 +69,7 @@ sample_and_save = function(file_dat) {
 
 peak_counts %>%
   group_by(file) %>%
-  sample_n(1000) %>% 
+  sample_n(500) %>% 
   nest %>% 
   mutate(data = map2(data, file, ~mutate(.x, file = .y))) %>%
   mutate(mcmc_result_time = map(data, sample_and_save))
