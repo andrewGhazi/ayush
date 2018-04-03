@@ -57,9 +57,11 @@ sample_and_save = function(file_dat) {
                       warmup = 500,
                       cores = 3,
                       open_progress = TRUE,
-                      control = list(max_treedepth = 15))
+                      control = list(max_treedepth = 15),
+                      pars = c('case_a', 'case_b', 'ctrl_a', 'ctrl_b'),
+                      include = TRUE)
   save(mcmc_res,
-       file = paste0('~/ayush/outputs/mcmc_results/', gsub('[.]txt', '',file_dat$file[1]), '_full_mcmc.RData')) # probably pretty big
+       file = paste0('~/ayush/outputs/mcmc_results/', gsub('[.]txt', '',file_dat$file[1]), '_test.RData')) # probably pretty big
   finish_time = Sys.time()
   
   return(finish_time - start_time)
@@ -67,6 +69,7 @@ sample_and_save = function(file_dat) {
 
 peak_counts %>%
   group_by(file) %>%
+  sample_n(1000) %>% 
   nest %>% 
   mutate(data = map2(data, file, ~mutate(.x, file = .y))) %>%
   mutate(mcmc_result_time = map(data, sample_and_save))
